@@ -1,7 +1,7 @@
 {
   "name": "code-comrades-marketplace",
   "owner": {
-    "name": "Saadat Ali"
+    "name": "Nextbridge Ltd."
   },
   "description": "Marketplace for the code-comrades plugin: a skill-agnostic batch-runner for applying skills (starting with code-commenter) across a folder or repository.",
   "plugins": [

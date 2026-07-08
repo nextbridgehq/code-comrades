@@ -1,10 +1,10 @@
 {
   "name": "code-comrades",
   "displayName": "Code Comrades",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A skill-agnostic batch-runner for applying code-comrades skills (starting with code-commenter) across a folder or repository.",
   "author": {
-    "name": "Saadat Ali"
+    "name": "Nextbridge Ltd."
   },
   "license": "MIT",
   "keywords": ["code-comments", "batch", "documentation", "plugin-ecosystem"]
