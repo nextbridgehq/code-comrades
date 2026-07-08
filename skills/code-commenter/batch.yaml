@@ -1,0 +1,18 @@
+skill: code-commenter
+version: 1
+extensions: default
+exclude_patterns:
+  mode: extend
+  patterns: []
+output_mode: edit-in-place
+max_parallel: 5
+discovery: scripts/discover_files.py
+default_config:
+  audience: senior
+  style:
+    python: google
+    max_docstring_lines: 12
+    include_examples: false
+  omit_types_when_annotated: true
+  idempotent: true
+  batch_mode: true
