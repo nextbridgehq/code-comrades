@@ -112,6 +112,19 @@ class TestBaseline(Base):
         self.assertEqual(rc, 0)
         self.assertEqual(f.read_text(), "BAD but improved\n")
 
+    def test_stage_baseline_fail_allow_keeps_edit(self):
+        """Same scenario as test_baseline_fail_allow_keeps_edit, but through
+        `stage` (checkpoint mode) instead of `check` (per_file mode) -- a
+        pre-broken file-scope gate under `on_baseline_fail: allow` must be
+        kept regardless of which mode is driving verification."""
+        self.good_gate(on_baseline_fail="allow")
+        f = self.src(body="BAD already\n")
+        self.run_cli("begin", "--run", "r1", "--file", str(f))
+        f.write_text("BAD but improved\n")
+        rc = self.run_cli("stage", "--run", "r1", "--file", str(f))
+        self.assertEqual(rc, 0)
+        self.assertEqual(f.read_text(), "BAD but improved\n")
+
 
 class TestGateError(Base):
     def test_unrunnable_gate_fails_closed(self):

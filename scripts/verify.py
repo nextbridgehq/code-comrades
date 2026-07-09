@@ -482,6 +482,8 @@ def cmd_stage(args) -> int:
     results = _run_gates_inner(cfg, root, file, ("file",))
     outcome = verdict(results, cfg)
     keep = outcome == PASS or (outcome == ERROR and cfg["on_gate_error"] == "keep")
+    if rec["baseline"] == FAIL and cfg["on_baseline_fail"] == "allow":
+        keep = True
 
     if not keep:
         ledger.restore(rec["snapshot"], file)
