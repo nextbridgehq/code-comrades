@@ -149,7 +149,7 @@ python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{V
 ```
 
    Exit `0` — every staged file in this window passed and is kept. Exit `1` — the reported JSON's `culprits` list gives the files that were reverted; override those files' manifest status to `reverted`. Files in the reported `kept` list keep whatever status the worker originally reported.
-7. If `consecutive_verify_failures >= ABORT_THRESHOLD`, stop the loop now and report that the run was aborted due to repeated verification failures — this is a signal the gate itself may be misconfigured for this skill, not that the files are actually broken.
+7. **If verification is active:** if `consecutive_verify_failures >= ABORT_THRESHOLD`, stop the loop after this chunk's results are recorded in the next step — do not dispatch another chunk. Report that the run was aborted due to repeated verification failures — this is a signal the gate itself may be misconfigured for this skill, not that the files are actually broken.
 8. Write this chunk's file list to `/tmp/code-comrades-batch-files.txt` (one per line) and its results to `/tmp/code-comrades-batch-results.json` (a JSON array of `{file, status, changed, reason, summary}`, with any verification overrides from step 6 applied), then:
 
 ```bash
