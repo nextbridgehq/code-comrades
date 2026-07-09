@@ -134,7 +134,7 @@ python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{V
 python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{VERIFY_CONFIG_PATH}" check --run "{RUN_ID}" --file "{file}"
 ```
 
-   Exit `0` — kept, unchanged, or skipped (unverifiable against a pre-existing failure). Leave the worker's reported status as-is. Exit `1` — reverted; override this file's eventual manifest status to `reverted` regardless of what the worker reported, and increment `consecutive_verify_failures`. Exit `2` — bug (called without `begin`); treat as an `error` status and investigate, this should never happen if step 3 ran for every file. Any exit `0` here resets `consecutive_verify_failures` to 0.
+   Exit `0` — read the JSON `"decision"` field to tell these apart: `"keep"` or `"unchanged"` means leave the worker's reported status as-is. `"skipped"` means the file's gate couldn't be evaluated against an already-broken baseline, so `check` restored the file to its pre-edit snapshot — override this file's `changed` to `false` in the recorded result regardless of what the worker reported, since nothing actually changed on disk. Exit `1` — reverted; override this file's eventual manifest status to `reverted` regardless of what the worker reported, and increment `consecutive_verify_failures`. Exit `2` — bug (called without `begin`); treat as an `error` status and investigate, this should never happen if step 3 ran for every file. Any exit `0` here resets `consecutive_verify_failures` to 0.
 
    **If verification is active and `VERIFY_MODE` is `checkpoint`:** for each file the worker reported `changed: true` for, call `stage` instead:
 
@@ -142,13 +142,13 @@ python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{V
 python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{VERIFY_CONFIG_PATH}" stage --run "{RUN_ID}" --file "{file}"
 ```
 
-   Exit `0` — banked (staged for the next checkpoint), unchanged, or skipped. Exit `1` — reverted at stage time already (a cheap file-scoped gate caught it, or the project baseline was already broken with `on_baseline_fail: skip`); override this file's manifest status to `reverted`. Exit `2` — bug, same as above. A `stage` exit of `0` does **not** mean the file is permanently kept — that's only known once a `checkpoint` call resolves it (see next bullet). Then, if `files_attempted` (including this chunk) has reached a multiple of `CHECKPOINT_EVERY`, call:
+   Exit `0` — banked (staged for the next checkpoint), unchanged, or skipped; this resets `consecutive_verify_failures` to 0. Exit `1` — reverted at stage time already (a cheap file-scoped gate caught it, or the project baseline was already broken with `on_baseline_fail: skip`); override this file's manifest status to `reverted`, and increment `consecutive_verify_failures` (same as a per_file revert). Exit `2` — bug, same as above. A `stage` exit of `0` does **not** mean the file is permanently kept — that's only known once a `checkpoint` call resolves it (see next bullet). Then, if `files_attempted` (including this chunk) has reached a multiple of `CHECKPOINT_EVERY`, call:
 
 ```bash
 python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{VERIFY_CONFIG_PATH}" checkpoint --run "{RUN_ID}"
 ```
 
-   Exit `0` — every staged file in this window passed and is kept. Exit `1` — the reported JSON's `culprits` list gives the files that were reverted; override those files' manifest status to `reverted`. Files in the reported `kept` list keep whatever status the worker originally reported.
+   Exit `0` — every staged file in this window passed and is kept; reset `consecutive_verify_failures` to 0. Exit `1` — the reported JSON's `culprits` list gives the files that were reverted; override those files' manifest status to `reverted`, and increment `consecutive_verify_failures` by the number of culprits. Files in the reported `kept` list keep whatever status the worker originally reported.
 7. **If verification is active:** if `consecutive_verify_failures >= ABORT_THRESHOLD`, stop the loop after this chunk's results are recorded in the next step — do not dispatch another chunk. Report that the run was aborted due to repeated verification failures — this is a signal the gate itself may be misconfigured for this skill, not that the files are actually broken.
 8. Write this chunk's file list to `/tmp/code-comrades-batch-files.txt` (one per line) and its results to `/tmp/code-comrades-batch-results.json` (a JSON array of `{file, status, changed, reason, summary}`, with any verification overrides from step 6 applied), then:
 
