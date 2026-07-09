@@ -1,7 +1,7 @@
 {
   "name": "code-comrades",
   "displayName": "Code Comrades",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A skill-agnostic batch-runner for applying code-comrades skills (starting with code-commenter) across a folder or repository.",
   "author": {
     "name": "Nextbridge Ltd."
