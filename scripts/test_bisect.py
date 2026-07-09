@@ -190,6 +190,7 @@ class TestStage(BisectBase):
             ]}))
         f = self.root / "f0.py"
         f.write_text("x = 1\n")
+        self.cli("baseline", "--run", "r")
         self.cli("begin", "--run", "r", "--file", str(f))
         f.write_text("def broken(\n")
         rc = self.cli("stage", "--run", "r", "--file", str(f))
