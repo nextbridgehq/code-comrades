@@ -1,5 +1,12 @@
 # Code Comrades
 
+![License](https://img.shields.io/badge/license-MIT-green)
+![Plugin Type](https://img.shields.io/badge/type-Claude%20Code%20Plugin-blue)
+![Status](https://img.shields.io/badge/status-Active-brightgreen)
+![Version](https://img.shields.io/badge/version-0.3.0-lightgrey)
+
+Developed and open-sourced by [Nextbridge](https://www.nextbridge.com).
+
 A [Claude Code](https://claude.com/claude-code) plugin that applies different skills across an entire folder or repository — not just one file at a time.
 
 Ask Claude to comment a single file and it does a great job. Ask it to comment 200 files across a real codebase, and you're stuck babysitting file-by-file requests.
@@ -165,6 +172,10 @@ claude --plugin-dir .               # load the plugin for one session without in
 - **Automated:** `scripts/discover_files.py` and `scripts/manifest.py` — the plugin's deterministic layers — have real tests against actual filesystem behavior. `claude plugin validate . --strict` checks the manifest and every component's frontmatter structurally.
 - **Live validation:** the full dispatch flow has been run against real code, including the subdirectory-target case (`path` other than the repo root), with results verified against on-disk artifacts rather than trusted from a transcript.
 - **Known gaps:** `--config` overrides and resume-after-interruption are covered by manual test scenarios, not live-validated end to end yet.
+
+## Keywords
+
+`claude-code` `plugin` `code-comments` `batch` `documentation` `plugin-ecosystem` `verification`
 
 ## License
 
