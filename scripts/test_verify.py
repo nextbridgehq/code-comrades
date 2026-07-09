@@ -203,6 +203,10 @@ class TestGateLock(Base):
                           "cmd": [sys.executable, "-c", "pass"]}]}
         (self.root / ".comrades" / "verify.json").write_text(json.dumps(cfg))
         f = self.src(body="a\n")
+        # `begin` now fails closed if project-scoped gates are configured
+        # and `baseline` was never called for this run (see
+        # TestProjectBaseline.test_begin_fails_closed_...); call it first.
+        self.run_cli("baseline", "--run", "r1")
         self.assertEqual(self.run_cli("begin", "--run", "r1", "--file", str(f)), 0)
         f.write_text("b\n")
         self.assertEqual(self.run_cli("check", "--run", "r1", "--file", str(f)), 0)
@@ -224,6 +228,80 @@ class TestConfigOverride(Base):
         recs = [json.loads(l) for l in led.read_text().splitlines()]
         self.assertEqual(recs[0]["event"], "begin")
         self.assertEqual(recs[0]["baseline"], "fail")
+
+
+class TestProjectBaseline(Base):
+    def write_project_config(self, cmd, **kw):
+        cfg = {"gates": [{"name": "proj", "cmd": cmd, "scope": "project",
+                          "timeout": 30}]}
+        cfg.update(kw)
+        (self.root / ".comrades" / "verify.json").write_text(json.dumps(cfg))
+
+    def test_baseline_records_pass_with_no_project_gates_configured(self):
+        (self.root / ".comrades" / "verify.json").write_text(json.dumps({"gates": []}))
+        rc = self.run_cli("baseline", "--run", "r1")
+        self.assertEqual(rc, 0)
+        led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
+        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        self.assertEqual(recs[0]["event"], "baseline_project")
+        self.assertEqual(recs[0]["verdict"], "pass")
+
+    def test_baseline_exits_3_when_project_gate_cannot_run(self):
+        self.write_project_config([MISSING_BINARY])
+        rc = self.run_cli("baseline", "--run", "r1")
+        self.assertEqual(rc, 3)
+
+    def test_baseline_idempotent_latest_record_wins(self):
+        self.write_project_config([sys.executable, "-c", "import sys; sys.exit(0)"])
+        self.run_cli("baseline", "--run", "r1")
+        self.write_project_config([sys.executable, "-c", "import sys; sys.exit(1)"])
+        rc = self.run_cli("baseline", "--run", "r1")
+        self.assertEqual(rc, 0)
+        led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
+        events = [json.loads(l) for l in led.read_text().splitlines()]
+        baselines = [r for r in events if r["event"] == "baseline_project"]
+        self.assertEqual(len(baselines), 2)
+        self.assertEqual(baselines[-1]["verdict"], "fail")
+
+    def test_begin_baseline_error_wins_even_if_file_gate_passes(self):
+        self.write_project_config([MISSING_BINARY])
+        cfg = json.loads((self.root / ".comrades" / "verify.json").read_text())
+        cfg["gates"].append({"name": "g", "scope": "file",
+                             "cmd": [sys.executable, "gate.py", "{file}"]})
+        (self.root / ".comrades" / "verify.json").write_text(json.dumps(cfg))
+        self.run_cli("baseline", "--run", "r1")
+        f = self.src(body="clean\n")
+        rc = self.run_cli("begin", "--run", "r1", "--file", str(f))
+        self.assertEqual(rc, 3)
+        led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
+        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        begin_rec = next(r for r in recs if r["event"] == "begin")
+        self.assertEqual(begin_rec["baseline"], "error")
+
+    def test_check_not_reverted_but_skipped_when_project_baseline_fails_and_policy_skip(self):
+        self.write_project_config(
+            [sys.executable, "-c", "import sys; sys.exit(1)"],
+            on_baseline_fail="skip",
+        )
+        self.run_cli("baseline", "--run", "r1")
+        f = self.src(body="clean\n")
+        self.run_cli("begin", "--run", "r1", "--file", str(f))
+        f.write_text("edited\n")
+        rc = self.run_cli("check", "--run", "r1", "--file", str(f))
+        self.assertEqual(rc, 0)
+        self.assertEqual(f.read_text(), "clean\n")
+
+    def test_begin_fails_closed_when_project_gates_configured_but_baseline_never_called(self):
+        self.write_project_config([sys.executable, "-c", "import sys; sys.exit(0)"])
+        # NOTE: deliberately no self.run_cli("baseline", ...) call here.
+        f = self.src(body="clean\n")
+        rc = self.run_cli("begin", "--run", "r1", "--file", str(f))
+        self.assertEqual(rc, 3)
+        led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
+        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        begin_rec = next(r for r in recs if r["event"] == "begin")
+        self.assertEqual(begin_rec["baseline"], "error")
+        self.assertTrue(begin_rec["contract_error"])
 
 
 if __name__ == "__main__":

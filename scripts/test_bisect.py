@@ -59,6 +59,13 @@ class BisectBase(unittest.TestCase):
 
     def stage_all(self, files, edits):
         """edits: dict index -> new content"""
+        # `begin` now fails closed if project-scoped gates are configured
+        # (which BisectBase.setUp always does) and `baseline` was never
+        # called for this run. Callers that already captured a baseline
+        # explicitly (e.g. TestProjectBaselinePolicy) are left alone so
+        # their gate-call-count assertions stay exact.
+        if verify.Ledger(self.root, "r").project_baseline() is None:
+            self.cli("baseline", "--run", "r")
         for i, f in enumerate(files):
             self.cli("begin", "--run", "r", "--file", str(f))
         for i, f in enumerate(files):
@@ -75,7 +82,9 @@ class TestCheckpointPass(BisectBase):
         self.stage_all(files, {})
         rc = self.cli("checkpoint", "--run", "r")
         self.assertEqual(rc, 0)
-        self.assertEqual(self.gate_calls(), 1)  # no bisect needed
+        # 1 for stage_all's automatic baseline call + 1 for checkpoint's
+        # single pass-through run; no bisect needed.
+        self.assertEqual(self.gate_calls(), 2)
         for i, f in enumerate(files):
             self.assertEqual(f.read_text(), f"clean{i} edited\n")
 
@@ -188,6 +197,55 @@ class TestStage(BisectBase):
         self.assertEqual(f.read_text(), "x = 1\n")
         # nothing staged -> checkpoint is a no-op, project gate never runs
         self.assertEqual(self.cli("checkpoint", "--run", "r"), 0)
+
+
+class TestProjectBaselinePolicy(BisectBase):
+    def call_baseline(self):
+        return self.cli("baseline", "--run", "r")
+
+    def test_skip_policy_reverts_each_file_at_stage_time_not_checkpoint_time(self):
+        files = self.make(4)
+        files[0].write_text("BAD from the start\n")
+        self.call_baseline()
+        self.stage_all(files, {})
+        self.assertEqual(files[0].read_text(), "BAD from the start\n")
+        for i in range(1, 4):
+            self.assertEqual(files[i].read_text(), f"clean{i}\n")
+        rc = self.cli("checkpoint", "--run", "r")
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.gate_calls(), 1)  # only the earlier baseline call
+
+    def test_allow_policy_keeps_everything_without_bisecting(self):
+        files = self.make(4)
+        files[0].write_text("BAD from the start\n")
+        (self.root / ".comrades" / "verify.json").write_text(json.dumps({
+            "gates": [{"name": "proj", "scope": "project", "timeout": 30,
+                       "cmd": [sys.executable, "pgate.py"]}],
+            "on_baseline_fail": "allow",
+        }))
+        self.call_baseline()
+        self.stage_all(files, {})
+        rc = self.cli("checkpoint", "--run", "r")
+        self.assertEqual(rc, 0)
+        for i, f in enumerate(files):
+            self.assertEqual(f.read_text(), f"clean{i} edited\n")
+        self.assertEqual(self.gate_calls(), 1)  # baseline only; checkpoint short-circuits
+
+    def test_revert_policy_bisects_and_reverts_when_a_file_outside_the_batch_stays_broken(self):
+        (self.root / ".comrades" / "verify.json").write_text(json.dumps({
+            "gates": [{"name": "proj", "scope": "project", "timeout": 30,
+                       "cmd": [sys.executable, "pgate.py"]}],
+            "on_baseline_fail": "revert",
+        }))
+        files = self.make(4)
+        (self.root / "f9.py").write_text("BAD unrelated file\n")
+        self.call_baseline()
+        self.stage_all(files, {})
+        rc = self.cli("checkpoint", "--run", "r")
+        self.assertEqual(rc, 1)
+        for i, f in enumerate(files):
+            self.assertEqual(f.read_text(), f"clean{i}\n")
+        self.assertEqual((self.root / "f9.py").read_text(), "BAD unrelated file\n")
 
 
 if __name__ == "__main__":

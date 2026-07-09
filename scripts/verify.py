@@ -187,6 +187,19 @@ def verdict(results: list[GateResult], cfg: dict[str, Any]) -> str:
     return PASS
 
 
+def combine_baseline(file_base: str, project_base: Optional[str]) -> str:
+    """Merge a file-scope baseline with a run-level project-scope baseline.
+
+    ERROR outranks FAIL outranks PASS. A missing project baseline (the
+    `baseline` command was never called this run) leaves file_base
+    unchanged, so runs that skip `baseline` keep today's exact behavior.
+    """
+    if project_base is None:
+        return file_base
+    rank = {PASS: 0, FAIL: 1, ERROR: 2}
+    return file_base if rank[file_base] >= rank[project_base] else project_base
+
+
 # ---------------------------------------------------------------- ledger
 
 
@@ -256,6 +269,15 @@ class Ledger:
         done = self.resolved()
         return {f: r for f, r in stage.items() if f not in done}
 
+    def project_baseline(self) -> Optional[str]:
+        """Latest recorded project-gate baseline verdict for this run, or
+        None if `baseline` was never called."""
+        latest = None
+        for rec in self.records():
+            if rec.get("event") == "baseline_project":
+                latest = rec["verdict"]
+        return latest
+
 
 def file_gates(cfg: dict[str, Any]) -> list[dict[str, Any]]:
     return [g for g in cfg["gates"] if g["scope"] == "file"]
@@ -279,6 +301,33 @@ def run_project_gates(cfg: dict[str, Any], root: Path) -> list[GateResult]:
 # ---------------------------------------------------------------- commands
 
 
+def cmd_baseline(args) -> int:
+    """Capture the project-scoped gate baseline once, before any file in
+    the run is touched. Safe to call with zero project gates configured
+    (records verdict "pass") and safe to call more than once (the latest
+    record wins via `Ledger.project_baseline`)."""
+    root = Path(args.root).resolve()
+    cfg = load_config(root, config_override=args.config)
+    ledger = Ledger(root, args.run)
+
+    results = run_project_gates(cfg, root)
+    base = verdict(results, cfg)
+
+    ledger.append({
+        "event": "baseline_project",
+        "file": "*",
+        "verdict": base,
+        "gates": [asdict(r) for r in results],
+    })
+    failing = next((r for r in results if r.status == ERROR), None)
+    print(json.dumps({"verdict": base,
+                      "gate_error": failing.output_tail if failing else None}))
+    # Exit 3 == the project gate could not execute at all. Abort before any
+    # worker is dispatched -- catching this here is strictly earlier than
+    # the first per-file `begin` call would catch it.
+    return 3 if base == ERROR else 0
+
+
 def cmd_begin(args) -> int:
     """Snapshot the file and record its pre-edit gate status (baseline)."""
     root, file = Path(args.root).resolve(), Path(args.file)
@@ -287,10 +336,16 @@ def cmd_begin(args) -> int:
 
     digest = ledger.snapshot(file, root)
 
-    # Baseline: only file-scoped gates. A project gate's baseline is
-    # captured once per run (see cmd_baseline), not per file.
+    # File-scope baseline for this one file, merged with the run-level
+    # project-scope baseline captured once by `baseline` (if it was called).
     results = run_gates(cfg, root, file, scopes=("file",))
-    base = verdict(results, cfg)
+    project_base = ledger.project_baseline()
+    # Project-scoped gates are configured but `baseline` was never called
+    # for this run -- fail closed rather than silently falling back to a
+    # file-only baseline, which would reopen the exact bug `baseline`
+    # exists to close.
+    contract_error = project_base is None and bool(project_gates(cfg))
+    base = ERROR if contract_error else combine_baseline(verdict(results, cfg), project_base)
 
     ledger.append({
         "event": "begin",
@@ -298,10 +353,13 @@ def cmd_begin(args) -> int:
         "snapshot": digest,
         "baseline": base,
         "gates": [asdict(r) for r in results],
+        "contract_error": contract_error,
     })
     failing = next((r for r in results if r.status == ERROR), None)
+    hint = ("project-scoped gates are configured but `baseline` was never "
+            "called for this run" if contract_error else None)
     print(json.dumps({"snapshot": digest, "baseline": base,
-                      "gate_error": failing.output_tail if failing else None}))
+                      "gate_error": hint or (failing.output_tail if failing else None)}))
     # Exit 3 == the gate could not execute. The orchestrator must abort the
     # run rather than dispatch workers against a gate that cannot verify.
     return 3 if base == ERROR else 0
@@ -511,6 +569,20 @@ def cmd_checkpoint(args) -> int:
                           "gate_runs": 0}))
         return 0
 
+    proj_base = ledger.project_baseline()
+    if proj_base not in (None, PASS) and cfg["on_baseline_fail"] == "allow":
+        # The project gate was already broken before this batch touched
+        # anything, and policy says keep edits regardless. cmd_stage only
+        # ever re-checks file-scope gates, so without this, a file staged
+        # under `allow` would still reach bisection below and get reverted
+        # for a failure that predates it -- exactly what `allow` should
+        # prevent.
+        for f in staged:
+            ledger.append({"event": "resolve", "file": f, "decision": KEEP})
+        print(json.dumps({"kept": sorted(staged), "culprits": [],
+                          "gate_runs": 0}))
+        return 0
+
     counter = [0]
     _apply(ledger, staged, set(staged))
     counter[0] += 1
@@ -612,6 +684,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     for name, fn, needs_file in (
+        ("baseline", cmd_baseline, False),
         ("begin", cmd_begin, True),
         ("check", cmd_check, True),
         ("stage", cmd_stage, True),
