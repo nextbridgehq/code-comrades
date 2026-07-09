@@ -1,0 +1,10 @@
+{
+  "gates": [
+    { "name": "lint", "scope": "file", "timeout": 60,
+      "cmd": ["npx", "eslint", "--max-warnings=0", "{file}"] },
+    { "name": "typecheck", "scope": "project", "timeout": 300,
+      "cmd": ["npx", "tsc", "--noEmit"] }
+  ],
+  "on_gate_error": "revert",
+  "on_baseline_fail": "skip"
+}

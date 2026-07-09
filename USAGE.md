@@ -149,6 +149,16 @@ Override the default config — e.g. more explanatory comments for a codebase ne
 
 Other config keys you can override this way: `audience` (`junior`/`senior`/`api-consumer`), `style.python` (`google`/`numpy`), `style.max_docstring_lines`, `style.include_examples`, `idempotent`.
 
+### 3f. Verification (optional)
+
+If the skill's `batch.yaml` has a `verify:` section, every edit is additionally checked against a deterministic gate command and reverted automatically if it regresses. Pass `--no-verify` to skip this for one run:
+
+```
+/code-comrades:dispatch code-commenter . --no-verify
+```
+
+Full detail on gate configuration, modes, and troubleshooting: [`docs/verification.md`](docs/verification.md).
+
 ## Known limitations
 
 See [`README.md`](README.md#known-limitations) and [`README.md`](README.md#testing-and-validation).
