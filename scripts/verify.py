@@ -208,6 +208,7 @@ class Ledger:
     """Append-only JSONL record of every decision. Enables resume + undo."""
 
     def __init__(self, root: Path, run_id: str):
+        self.root = root
         self.dir = root / STATE_DIR / "runs" / run_id
         self.dir.mkdir(parents=True, exist_ok=True)
         self.path = self.dir / "ledger.jsonl"
@@ -240,18 +241,23 @@ class Ledger:
     # -- snapshots -----------------------------------------------------
 
     def snapshot(self, file: Path, root: Path) -> str:
-        digest = sha256_file(file)
+        # `file` is root-relative (it's also used as a stable ledger key);
+        # resolve against `root` explicitly rather than trusting the
+        # process's CWD to happen to match it.
+        abs_file = root / file
+        digest = sha256_file(abs_file)
         blob = self.snapshots / digest
-        if not blob.exists() and file.exists():
-            shutil.copy2(file, blob)
+        if not blob.exists() and abs_file.exists():
+            shutil.copy2(abs_file, blob)
         return digest
 
     def restore(self, digest: str, file: Path) -> bool:
+        abs_file = self.root / file
         blob = self.snapshots / digest
         if not blob.exists():
             return False
-        file.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(blob, file)
+        abs_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(blob, abs_file)
         return True
 
     def resolved(self) -> set[str]:
@@ -379,7 +385,7 @@ def cmd_check(args) -> int:
               file=sys.stderr)
         return 2
 
-    post_digest = sha256_file(file)
+    post_digest = sha256_file(root / file)
     if post_digest == rec["snapshot"]:
         ledger.append({"event": "check", "file": str(file),
                        "decision": UNCHANGED, "gates": []})
@@ -456,7 +462,7 @@ def cmd_stage(args) -> int:
         print(json.dumps({"error": "no begin record"}), file=sys.stderr)
         return 2
 
-    edited = sha256_file(file)
+    edited = sha256_file(root / file)
     if edited == rec["snapshot"]:
         ledger.append({"event": "check", "file": str(file),
                        "decision": UNCHANGED, "gates": []})

@@ -2,6 +2,7 @@
 """Tests for verify.py. Stdlib unittest only. Run: python3 -m unittest -v"""
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -87,6 +88,43 @@ class TestKeepAndRevert(Base):
         self.good_gate()
         f = self.src()
         self.assertEqual(self.run_cli("check", "--run", "r1", "--file", str(f)), 2)
+
+
+class TestCwdIndependence(Base):
+    """--file is root-relative and must resolve against --root, not the
+    process's CWD -- a mismatch previously degraded silently (sha256_file
+    returned "<absent>" for a path that doesn't exist relative to CWD,
+    which `check` then read as "unchanged", skipping verification
+    entirely with no error)."""
+
+    def run_from_elsewhere(self, *args):
+        elsewhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, ignore_errors=True)
+        cwd = os.getcwd()
+        try:
+            os.chdir(elsewhere)
+            return self.run_cli(*args)
+        finally:
+            os.chdir(cwd)
+
+    def test_passing_edit_kept_with_relative_file_from_other_cwd(self):
+        self.good_gate()
+        f = self.src(name="a.py", body="clean\n")
+        self.run_from_elsewhere("begin", "--run", "r1", "--file", "a.py")
+        f.write_text("still clean\n")
+        rc = self.run_from_elsewhere("check", "--run", "r1", "--file", "a.py")
+        self.assertEqual(rc, 0)
+        self.assertEqual(f.read_text(), "still clean\n")
+
+    def test_failing_edit_reverted_with_relative_file_from_other_cwd(self):
+        self.good_gate()
+        original = "clean\n"
+        f = self.src(name="a.py", body=original)
+        self.run_from_elsewhere("begin", "--run", "r1", "--file", "a.py")
+        f.write_text("BAD content\n")
+        rc = self.run_from_elsewhere("check", "--run", "r1", "--file", "a.py")
+        self.assertEqual(rc, 1)
+        self.assertEqual(f.read_text(), original)
 
 
 class TestBaseline(Base):
