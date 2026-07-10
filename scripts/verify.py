@@ -67,6 +67,7 @@ def load_config(root: Path, config_override: Optional[str] = None) -> dict[str, 
 
 @dataclass
 class GateResult:
+    """Records the outcome of executing a single gate command against a file or project."""
     name: str
     status: str          # pass | fail | error
     exit_code: Optional[int]

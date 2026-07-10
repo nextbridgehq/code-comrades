@@ -15,7 +15,9 @@ import verify
 # Counts its own invocations so tests can assert on gate economy.
 PROJECT_GATE = '''\
 import pathlib, sys
+# Increment the gate call counter
 c = pathlib.Path("gate_calls"); c.write_text(str(int(c.read_text() or 0) + 1) if c.exists() else "1")
+# Check if any python file contains the "BAD" token
 bad = any("BAD" in p.read_text() for p in pathlib.Path(".").glob("f*.py"))
 sys.exit(1 if bad else 0)
 '''
@@ -143,7 +145,7 @@ class TestInteraction(BisectBase):
                 if f.read_text() != f"clean{i}\n"]
         self.assertGreaterEqual(len(kept), 2)
 
-        out = [json.loads(l) for l in
+        out = [json.loads(line) for line in
                (self.root / ".comrades" / "runs" / "r" / "ledger.jsonl")
                .read_text().splitlines()]
         cp = [r for r in out if r["event"] == "checkpoint"][-1]

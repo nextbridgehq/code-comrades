@@ -3,7 +3,6 @@
 
 import json
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -26,6 +25,11 @@ MISSING_BINARY = "comrades-no-such-gate-binary-xyz"
 
 
 class Base(unittest.TestCase):
+    """Base class for verify tests, providing a temporary directory and helper methods.
+    
+    Sets up a temporary working directory and a basic file-scoped gate that
+    fails if the target file contains the "BAD" token.
+    """
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
@@ -187,7 +191,7 @@ class TestLedger(Base):
         f.write_text("BAD\n")
         self.run_cli("check", "--run", "r1", "--file", str(f))
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        recs = [json.loads(line) for line in led.read_text().splitlines()]
         self.assertEqual([r["event"] for r in recs], ["begin", "check"])
         self.assertEqual(recs[1]["decision"], "reverted")
 
@@ -238,7 +242,7 @@ class TestConfigOverride(Base):
         self.run_cli("--config", str(alt_config), "begin",
                      "--run", "r1", "--file", str(f))
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        recs = [json.loads(line) for line in led.read_text().splitlines()]
         self.assertEqual(recs[0]["event"], "begin")
         self.assertEqual(recs[0]["baseline"], "fail")
 
@@ -255,7 +259,7 @@ class TestProjectBaseline(Base):
         rc = self.run_cli("baseline", "--run", "r1")
         self.assertEqual(rc, 0)
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        recs = [json.loads(line) for line in led.read_text().splitlines()]
         self.assertEqual(recs[0]["event"], "baseline_project")
         self.assertEqual(recs[0]["verdict"], "pass")
 
@@ -271,7 +275,7 @@ class TestProjectBaseline(Base):
         rc = self.run_cli("baseline", "--run", "r1")
         self.assertEqual(rc, 0)
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        events = [json.loads(l) for l in led.read_text().splitlines()]
+        events = [json.loads(line) for line in led.read_text().splitlines()]
         baselines = [r for r in events if r["event"] == "baseline_project"]
         self.assertEqual(len(baselines), 2)
         self.assertEqual(baselines[-1]["verdict"], "fail")
@@ -287,7 +291,7 @@ class TestProjectBaseline(Base):
         rc = self.run_cli("begin", "--run", "r1", "--file", str(f))
         self.assertEqual(rc, 3)
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        recs = [json.loads(line) for line in led.read_text().splitlines()]
         begin_rec = next(r for r in recs if r["event"] == "begin")
         self.assertEqual(begin_rec["baseline"], "error")
 
@@ -311,7 +315,7 @@ class TestProjectBaseline(Base):
         rc = self.run_cli("begin", "--run", "r1", "--file", str(f))
         self.assertEqual(rc, 3)
         led = self.root / ".comrades" / "runs" / "r1" / "ledger.jsonl"
-        recs = [json.loads(l) for l in led.read_text().splitlines()]
+        recs = [json.loads(line) for line in led.read_text().splitlines()]
         begin_rec = next(r for r in recs if r["event"] == "begin")
         self.assertEqual(begin_rec["baseline"], "error")
         self.assertTrue(begin_rec["contract_error"])
