@@ -1,0 +1,12 @@
+{
+  "gates": [
+    { "name": "syntax", "scope": "file", "timeout": 30,
+      "cmd": ["python3", "-m", "py_compile", "{file}"] },
+    { "name": "ruff", "scope": "file", "timeout": 60,
+      "cmd": ["ruff", "check", "{file}"] },
+    { "name": "tests", "scope": "project", "timeout": 600,
+      "cmd": ["pytest", "-q", "-x"] }
+  ],
+  "on_gate_error": "revert",
+  "on_baseline_fail": "skip"
+}

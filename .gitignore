@@ -1,5 +1,6 @@
 .superpowers/
 .claude-batch-manifest/
+.comrades/
 __pycache__/
 *.pyc
 .pytest_cache/

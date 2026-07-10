@@ -1,5 +1,12 @@
 # Code Comrades
 
+![License](https://img.shields.io/badge/license-MIT-green)
+![Plugin Type](https://img.shields.io/badge/type-Claude%20Code%20Plugin-blue)
+![Status](https://img.shields.io/badge/status-Active-brightgreen)
+![Version](https://img.shields.io/badge/version-0.3.0-lightgrey)
+
+Developed and open-sourced by [Nextbridge](https://www.nextbridge.com).
+
 A [Claude Code](https://claude.com/claude-code) plugin that applies different skills across an entire folder or repository — not just one file at a time.
 
 Ask Claude to comment a single file and it does a great job. Ask it to comment 200 files across a real codebase, and you're stuck babysitting file-by-file requests.
@@ -18,6 +25,7 @@ The plugin ships with one skill today, [`code-commenter`](skills/code-commenter/
 - **Resumable** — progress is saved after every chunk of files, so an interrupted run picks up where it left off instead of starting over or reprocessing everything.
 - **Idempotent** — re-running against an already-processed codebase is a safe no-op, not a source of duplicate edits.
 - **Scoped workers** — each file is handled by a subagent restricted to Read/Edit/Write/Skill tools only (no shell access, no further sub-dispatch), bounding the blast radius of a batch run to the files it's actually meant to touch.
+- **Optional per-file verification** — gate every edit behind a deterministic command (linter, typecheck, test suite) and auto-revert it on regression, with an efficient checkpoint/bisection mode for expensive project-wide gates. See [`docs/verification.md`](docs/verification.md).
 
 ## Requirements
 
@@ -108,6 +116,7 @@ Real output from this plugin's own dogfood run against `scripts/discover_files.p
 | `--dry-run` | List matching files without changing anything. |
 | `--config key=value,...` | Override the skill's default config for this run, e.g. `--config audience=junior`. |
 | `--max-files N` | Cap how many files are processed this session — useful for a first trial run on a large repo. |
+| `--no-verify` | Skip verification for this run, even if the skill's `batch.yaml` configures it. |
 
 Common examples:
 
@@ -133,6 +142,7 @@ Full walkthrough, including what happens step by step during a run and how resum
 2. Files are processed in parallel chunks (default 5, configurable per skill via `batch.yaml`'s `max_parallel`). Each file is handed to a fresh **`batch-file-worker`** subagent (`agents/batch-file-worker.md`), scoped to Read/Edit/Write/Skill tools only.
 3. The worker invokes the target skill (e.g. `code-commenter`) on its one file, applies the edit directly, and reports a status back to the orchestrator.
 4. Progress is written to the manifest after every chunk — an interruption loses at most one chunk's worth of work, and a re-run can resume rather than restart.
+5. If the skill's `batch.yaml` has a `verify:` section (and `--no-verify` wasn't passed), each edit is additionally snapshotted before the worker runs and gated after — a regression is reverted automatically. See [`docs/verification.md`](docs/verification.md).
 
 ## Extending: add a new skill
 
@@ -162,6 +172,10 @@ claude --plugin-dir .               # load the plugin for one session without in
 - **Automated:** `scripts/discover_files.py` and `scripts/manifest.py` — the plugin's deterministic layers — have real tests against actual filesystem behavior. `claude plugin validate . --strict` checks the manifest and every component's frontmatter structurally.
 - **Live validation:** the full dispatch flow has been run against real code, including the subdirectory-target case (`path` other than the repo root), with results verified against on-disk artifacts rather than trusted from a transcript.
 - **Known gaps:** `--config` overrides and resume-after-interruption are covered by manual test scenarios, not live-validated end to end yet.
+
+## Keywords
+
+`claude-code` `plugin` `code-comments` `batch` `documentation` `plugin-ecosystem` `verification`
 
 ## License
 

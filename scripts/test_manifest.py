@@ -59,6 +59,13 @@ def test_files_to_process_respects_max():
     assert len(m.files_to_process(manifest, mode="resume", max_files=2)) == 2
 
 
+def test_files_to_process_resume_mode_includes_reverted():
+    """A reverted file (verification rolled it back) is retried on resume, like an error."""
+    manifest = m.new_manifest("s", "p", {}, ["a.py", "b.py"])
+    manifest["files"]["a.py"]["status"] = "reverted"
+    assert set(m.files_to_process(manifest, mode="resume")) == {"a.py", "b.py"}
+
+
 def test_record_results_updates_matched_files():
     """Worker results overwrite the corresponding manifest entries by file path."""
     manifest = m.new_manifest("s", "p", {}, ["a.py", "b.py"])
@@ -88,9 +95,19 @@ def test_summarize_counts_by_status_and_changed():
     manifest["files"]["b.py"] = {"status": "done", "changed": False, "reason": None, "summary": None}
     manifest["files"]["c.py"] = {"status": "error", "changed": False, "reason": "boom", "summary": None}
     result = m.summarize(manifest)
-    assert result["counts"] == {"pending": 0, "done": 2, "skipped": 0, "error": 1}
+    assert result["counts"] == {"pending": 0, "done": 2, "skipped": 0, "error": 1, "reverted": 0}
     assert result["changed"] == 1
     assert result["total"] == 3
+
+
+def test_summarize_counts_reverted():
+    """Summary tallies reverted files separately from error, done, etc."""
+    manifest = m.new_manifest("s", "p", {}, ["a.py", "b.py"])
+    manifest["files"]["a.py"] = {"status": "reverted", "changed": False, "reason": "gate failed", "summary": None}
+    manifest["files"]["b.py"] = {"status": "done", "changed": True, "reason": None, "summary": None}
+    result = m.summarize(manifest)
+    assert result["counts"]["reverted"] == 1
+    assert result["counts"]["done"] == 1
 
 
 def test_save_and_load_roundtrip(tmp_path):

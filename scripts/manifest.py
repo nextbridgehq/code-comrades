@@ -12,7 +12,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
-VALID_STATUSES = {"pending", "done", "skipped", "error"}
+VALID_STATUSES = {"pending", "done", "skipped", "error", "reverted"}
 
 
 def canonical_key(repo_relative_path, config):
@@ -110,7 +110,7 @@ def files_to_process(manifest, mode="resume", max_files=None):
     else:
         candidates = [
             f for f, entry in manifest["files"].items()
-            if entry["status"] in ("pending", "error")
+            if entry["status"] in ("pending", "error", "reverted")
         ]
     if max_files is not None:
         candidates = candidates[:max_files]
@@ -159,7 +159,7 @@ def summarize(manifest):
     Returns:
         Dict with per-status counts, total changed files, and file total.
     """
-    counts = {"pending": 0, "done": 0, "skipped": 0, "error": 0}
+    counts = {"pending": 0, "done": 0, "skipped": 0, "error": 0, "reverted": 0}
     changed = 0
     for entry in manifest["files"].values():
         counts[entry["status"]] += 1

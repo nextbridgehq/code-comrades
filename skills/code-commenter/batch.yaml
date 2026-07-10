@@ -16,3 +16,12 @@ default_config:
   omit_types_when_annotated: true
   idempotent: true
   batch_mode: true
+
+# Optional — omit entirely for no verification (backward compatible).
+# Uncomment and point gate_config at a real .comrades/verify.json to opt in.
+# verify:
+#   enabled: true
+#   mode: per_file                      # per_file | checkpoint
+#   checkpoint_every: 25                # only relevant when mode: checkpoint
+#   gate_config: .comrades/verify.json  # path to gate config, relative to repo root
+#   abort_threshold: 10                 # consecutive verify failures before halting the batch
