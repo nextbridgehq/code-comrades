@@ -1,0 +1,32 @@
+skill: error-handling-auditor
+version: 1
+extensions: py,js,jsx,mjs,cjs,ts,tsx,go
+exclude_patterns:
+  mode: extend
+  patterns:
+    - "*_test.py"
+    - "test_*.py"
+    - "*.test.js"
+    - "*.spec.js"
+    - "*_test.go"
+output_mode: edit-in-place
+max_parallel: 5
+discovery: scripts/discover_files.py
+default_config:
+  add_guards: false
+  unsafe_only: true
+  marker_format: "TODO(error-handling): {description}"
+  idempotent: true
+  batch_mode: true
+
+# add_guards defaults to false: unlike every other skill in this plugin,
+# guard injection changes runtime behavior, so it is opt-in only.
+#   /code-comrades:dispatch error-handling-auditor . --config "add_guards=true"
+
+# Optional — omit entirely for no verification (backward compatible).
+# Strongly recommended if add_guards is enabled and the project has tests:
+# verify:
+#   enabled: true
+#   mode: per_file
+#   gate_config: .comrades/verify.json
+#   abort_threshold: 10

@@ -1,0 +1,32 @@
+skill: changelog-fragment-extractor
+version: 1
+
+# `execution: project` is what distinguishes this contract from batch.yaml.
+# This skill's unit of work is "one commit in, one fragment out" — git
+# history, not files on disk — which the batch engine's file-discovery
+# model (discover_files.py) has no way to express. See docs/project-skills.md
+# and the design note at the top of SKILL.md for why this is a project
+# skill rather than a batch one.
+execution: project
+
+# `changelog/fragments/` is a directory, not a single literal file: this
+# skill may write zero or more fragment files under it per run (one per
+# qualifying commit), never anything outside it. See
+# docs/project-skills.md's "Multi-artifact produces" section for the
+# trailing-slash convention this depends on.
+produces:
+  - changelog/fragments/
+
+# Shared facts substrate — this skill only needs git.latest_tag and
+# git.remote from it; the rest of the facts sheet is unused but free.
+inspect: scripts/inspect_repo.py
+
+# since-tag (default): only commits after git.latest_tag. full: the
+# entire history (first run on a repo with no tags yet, or an explicit
+# rebuild).
+modes: [since-tag, full]
+
+default_config:
+  mode: since-tag
+  scan_messages: true   # parse conventional-commit / CHANGE:/FIX:/etc. prefixes from commit messages
+  scan_comments: true    # also scan diffs for `TODO changelog:` markers introduced by the commit

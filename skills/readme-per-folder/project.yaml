@@ -1,0 +1,28 @@
+skill: readme-per-folder
+version: 1
+
+# `execution: project` is what distinguishes this contract from batch.yaml.
+# This skill's unit of work is "one immediate subdirectory in, one *new*
+# README.md out" — discover_files.py finds files, not directories, and a
+# batch worker edits the one file it's given rather than synthesizing a
+# new file per directory. See docs/project-skills.md and the design note
+# at the top of SKILL.md.
+#
+# Scoped to immediate (non-recursive) child directories only, by design —
+# see SKILL.md Step 1. Run it again with a deeper TARGET_PATH to cover a
+# nested subtree.
+execution: project
+
+# One level of subdirectories under the target path, never deeper. See
+# docs/project-skills.md's "Multi-artifact produces" section for the
+# trailing-pattern convention this depends on.
+produces:
+  - "*/README.md"
+
+inspect: scripts/inspect_repo.py
+
+modes: [generate]
+
+default_config:
+  mode: generate
+  skip_if_exists: true   # true: only write where README.md is missing. false: regenerate every immediate child's README.md.

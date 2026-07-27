@@ -1,17 +1,18 @@
 {
   "name": "code-comrades-marketplace",
   "owner": {
-    "name": "Nextbridge Ltd."
+    "name": "Nextbridge"
   },
-  "description": "Marketplace for the code-comrades plugin: a skill-agnostic batch-runner for applying skills (starting with code-commenter) across a folder or repository.",
+  "description": "Marketplace for the code-comrades plugin: batch skills (code-commenter, type-annotator, license-header-injector, error-handling-auditor, import-sorter-cleaner, test-stub-generator) and project skills (readme-master, changelog-fragment-extractor, readme-per-folder) applied across a folder or repository.",
   "plugins": [
     {
       "name": "code-comrades",
       "source": "./",
-      "description": "A skill-agnostic batch-runner for applying code-comrades skills (starting with code-commenter) across a folder or repository.",
+      "description": "Batch and project skills for whole repositories — per-file batch runs with incremental git scoping, pipelines, and run reports, plus repository-level skills like readme-master.",
       "author": {
-        "name": "Nextbridge Ltd."
-      }
+        "name": "Nextbridge"
+      },
+      "homepage": "https://github.com/nextbridgehq/code-comrades#readme"
     }
   ]
 }

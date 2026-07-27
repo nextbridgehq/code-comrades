@@ -1,0 +1,41 @@
+skill: type-annotator
+version: 1
+# Only languages where this skill can add annotations: Python type hints
+# and JSDoc for plain JavaScript. TypeScript is deliberately absent —
+# it's already typed at the language level (SKILL.md Step 1).
+extensions: py,js,jsx,mjs,cjs
+exclude_patterns:
+  mode: extend
+  patterns:
+    - "*.pyi"          # stub files are annotations already
+    - "*_test.py"      # test signatures rarely benefit; keep first runs focused
+    - "test_*.py"
+    - "*.test.js"
+    - "*.spec.js"
+output_mode: edit-in-place
+max_parallel: 5
+discovery: scripts/discover_files.py
+default_config:
+  strictness: conservative
+  python:
+    style: builtin-generics
+    target_version: "3.9"
+    add_typing_imports: true
+    use_optional_syntax: auto
+  javascript:
+    format: jsdoc
+  annotate_params: true
+  annotate_returns: true
+  annotate_variables: false
+  annotate_class_attributes: true
+  idempotent: true
+  batch_mode: true
+
+# Optional — omit entirely for no verification (backward compatible).
+# Strongly recommended for this skill if your project runs mypy/pyright:
+# a type-checker gate catches any annotation that doesn't hold.
+# verify:
+#   enabled: true
+#   mode: per_file
+#   gate_config: .comrades/verify.json
+#   abort_threshold: 10

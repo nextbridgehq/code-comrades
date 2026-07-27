@@ -1,0 +1,30 @@
+skill: readme-master
+version: 1
+
+# `execution: project` is what distinguishes this contract from batch.yaml.
+# A project skill runs once against the whole repository and produces
+# artifacts; it is never sharded into per-file workers, needs no manifest,
+# and no batch-file-worker dispatch. See docs/project-skills.md.
+execution: project
+
+# Artifacts this skill may create or edit. Dispatch and the skill itself
+# treat this as the write allowlist — a project skill must not touch
+# files outside its declared `produces` set.
+produces:
+  - README.md
+
+# The deterministic facts script the skill runs first (repo-relative to
+# the plugin root). Shared substrate: other project skills point at the
+# same script.
+inspect: scripts/inspect_repo.py
+
+# Modes the skill supports; `auto` in default_config picks between them.
+modes: [generate, improve, sync]
+
+default_config:
+  mode: auto            # auto | generate | improve | sync
+  emoji_headers: true   # emoji in section headers (never sprinkled in prose)
+  badges: static        # static shields.io URLs from the git remote; no network calls
+  toc: auto             # collapsible ToC when the README has >6 sections
+  ask_budget: one-round # at most one round of questions, only for repo-unanswerable facts
+  quality_footer: true  # end the run report with a "what's still missing" checklist

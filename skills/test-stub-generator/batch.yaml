@@ -1,0 +1,34 @@
+skill: test-stub-generator
+version: 1
+extensions: py,js,jsx,mjs,cjs,ts,tsx,go
+exclude_patterns:
+  mode: extend
+  patterns:
+    - "*_test.py"
+    - "test_*.py"
+    - "*.test.js"
+    - "*.spec.js"
+    - "*.test.ts"
+    - "*.spec.ts"
+    - "*_test.go"
+output_mode: edit-in-place
+max_parallel: 3
+discovery: scripts/discover_files.py
+
+# Note: this skill's unit of work is "one source file in, one *new* test
+# file out" rather than "one file edited in place" — see SKILL.md Step 8
+# for how manifest/status reporting handles that distinction.
+
+default_config:
+  framework: auto
+  coverage_per_function: true
+  idempotent: true
+  batch_mode: true
+
+# Verification is NOT recommended for this skill. scripts/verify.py's
+# snapshot/gate/revert cycle snapshots and re-checks the *dispatched* file
+# (the source file) — but this skill never edits that file, it writes a
+# new, differently-named test file instead (see the Note above). Enabling
+# verify: here would gate an untouched file and never actually protect the
+# generated test file. Leave this unset unless/until verify.py supports a
+# derived-output target distinct from the dispatched file.

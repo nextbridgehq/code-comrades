@@ -2,6 +2,8 @@
 
 Optional, opt-in gating for `dispatch` batch runs: every worker edit is snapshotted before it happens, checked against a deterministic gate command after, and reverted byte-for-byte if it regresses. A 200-file batch becomes 200 independently verified edits instead of one all-or-nothing change.
 
+**Applies only to skills that edit the file they were dispatched with.** `scripts/verify.py`'s `begin`/`check` cycle snapshots and re-checks one specific path: the file `dispatch` discovered and handed to the worker. That holds for `code-commenter`, `type-annotator`, `license-header-injector`, `error-handling-auditor`, and `import-sorter-cleaner` — each edits the dispatched file in place. It does **not** hold for `test-stub-generator`, whose whole point is to write a *new*, differently-named file (a test file) without touching the source file it was given — enabling `verify:` there would snapshot and re-check the untouched source file and never actually gate the generated artifact. `test-stub-generator`'s `batch.yaml` leaves `verify:` unset for exactly this reason. Project skills (`readme-master`, `changelog-fragment-extractor`, `readme-per-folder`) don't use this system at all — see [`docs/project-skills.md`](project-skills.md), whose review model is a plain `git diff`/`git status`, not a snapshot/gate/revert cycle.
+
 ## Enabling it
 
 Add a `verify:` section to the skill's `batch.yaml`:
