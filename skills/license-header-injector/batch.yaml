@@ -1,0 +1,34 @@
+skill: license-header-injector
+version: 1
+# All default code extensions apply — every source file should carry a header.
+extensions: default
+exclude_patterns:
+  mode: extend
+  patterns: []
+output_mode: edit-in-place
+# Header insertion is a tiny, mechanical edit per file — safe to run wider
+# than judgment-heavy skills like code-commenter.
+max_parallel: 8
+discovery: scripts/discover_files.py
+default_config:
+  license: MIT
+  holder: ""
+  year_mode: current
+  update_existing: false
+  include_copyright_line: auto
+  template: ""
+  blank_line_after: true
+  detection_window: 15
+  idempotent: true
+  batch_mode: true
+
+# Typical real run — set your holder once at dispatch time:
+#   /code-comrades:dispatch license-header-injector . --config "holder=Nextbridge,license=Apache-2.0"
+
+# Optional — omit entirely for no verification (backward compatible).
+# verify:
+#   enabled: true
+#   mode: checkpoint
+#   checkpoint_every: 25
+#   gate_config: .comrades/verify.json
+#   abort_threshold: 10

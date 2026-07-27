@@ -2,7 +2,8 @@
 """Deterministic file discovery for code-comrades dispatch.
 
 Walks a directory tree, filters by extension/exclude-dir/exclude-pattern/
-size/gitignore/binary-content, and prints one relative path per line.
+size/gitignore/binary-content, optionally narrows the result to a git
+scope (changed/staged/since a ref), and prints one relative path per line.
 Contains no skill-specific logic — the orchestrator resolves a skill's
 batch.yaml into CLI flags before invoking this script.
 """
@@ -90,6 +91,134 @@ def is_gitignored(filepath, root):
         return False
 
 
+class GitScopeError(RuntimeError):
+    """Raised when a requested git scope cannot be resolved.
+
+    Deliberately fatal rather than fail-open: if the caller asked for
+    "only changed files" and git can't answer, silently widening the run
+    to every file in the tree is the opposite of what they asked for.
+    """
+
+
+def _git_out(root, args, timeout=15):
+    """Run a git command, returning stdout as text or raising GitScopeError.
+
+    Args:
+        root: Directory to run git in.
+        args: Git arguments, excluding the leading "git".
+        timeout: Seconds before the call is abandoned.
+
+    Returns:
+        Raw stdout decoded as UTF-8, with undecodable bytes preserved via
+        surrogateescape so exotic filenames survive the round trip.
+
+    Raises:
+        GitScopeError: If git is missing, times out, or exits non-zero.
+    """
+    try:
+        result = subprocess.run(
+            ["git"] + args, cwd=root, capture_output=True, timeout=timeout,
+        )
+    except FileNotFoundError:
+        raise GitScopeError("git is not installed or not on PATH")
+    except subprocess.TimeoutExpired:
+        raise GitScopeError(f"git {' '.join(args)} timed out after {timeout}s")
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise GitScopeError(detail or f"git {' '.join(args)} failed")
+    return result.stdout.decode("utf-8", "surrogateescape")
+
+
+def _git_paths(root, args):
+    """Run a NUL-terminated git path command and return its paths.
+
+    NUL separation (-z) is what makes this safe for filenames containing
+    spaces, newlines, or non-ASCII characters, which git would otherwise
+    quote and escape in its default output.
+    """
+    return [p for p in _git_out(root, args).split("\0") if p]
+
+
+def _has_commits(root):
+    """Check whether the repo has at least one commit (i.e. HEAD resolves)."""
+    try:
+        _git_out(root, ["rev-parse", "--verify", "HEAD"])
+        return True
+    except GitScopeError:
+        return False
+
+
+def git_scoped_paths(root, scope, since_ref=None):
+    """Resolve a git scope to the set of paths it covers, relative to root.
+
+    Paths are returned relative to `root` (not the repo root), so they can
+    be intersected directly with the relative paths discover_files yields.
+    Deleted files are excluded — a batch skill has nothing to edit in a
+    file that no longer exists.
+
+    Args:
+        root: Directory to scope from; may be a subdirectory of the repo.
+        scope: One of "all" (no scoping), "changed" (uncommitted work:
+            staged + unstaged + untracked), "staged" (index only), or
+            "since" (everything touched since diverging from since_ref,
+            committed or not).
+        since_ref: Git ref to compare against; required when scope="since".
+
+    Returns:
+        A set of relative paths, or None when scope is "all" (meaning no
+        scoping should be applied at all — distinct from an empty set,
+        which means "in scope: nothing").
+
+    Raises:
+        GitScopeError: If scope is unknown, root isn't a git repo, the ref
+            doesn't resolve, or git is unavailable.
+    """
+    if scope == "all":
+        return None
+    if scope not in ("changed", "staged", "since"):
+        raise GitScopeError(f"unknown git scope: {scope}")
+
+    _git_out(root, ["rev-parse", "--is-inside-work-tree"])
+    has_commits = _has_commits(root)
+
+    if scope == "staged":
+        if not has_commits:
+            # No HEAD to diff against; everything in the index is staged.
+            return set(_git_paths(root, ["ls-files", "-z"]))
+        return set(_git_paths(
+            root, ["diff", "--name-only", "-z", "--relative", "--diff-filter=d", "--cached"]
+        ))
+
+    if scope == "changed":
+        untracked = _git_paths(root, ["ls-files", "-z", "--others", "--exclude-standard"])
+        if not has_commits:
+            return set(_git_paths(root, ["ls-files", "-z"])) | set(untracked)
+        tracked = _git_paths(
+            root, ["diff", "--name-only", "-z", "--relative", "--diff-filter=d", "HEAD"]
+        )
+        return set(tracked) | set(untracked)
+
+    # scope == "since"
+    if not since_ref:
+        raise GitScopeError("--since-ref is required when --git-scope is 'since'")
+    if not has_commits:
+        raise GitScopeError("cannot resolve 'since' scope: repository has no commits")
+    base = _git_out(root, ["merge-base", since_ref, "HEAD"]).strip()
+    if not base:
+        raise GitScopeError(f"no merge base between {since_ref} and HEAD")
+    # Diff base -> working tree (not base...HEAD): this catches work that is
+    # committed on the branch *and* work still uncommitted, which is what
+    # "everything I've touched since branching" means to a caller.
+    tracked = _git_paths(
+        root, ["diff", "--name-only", "-z", "--relative", "--diff-filter=d", base]
+    )
+    # git diff only reports tracked files, so a new file the user created but
+    # hasn't staged is invisible to it — yet it is unambiguously work done
+    # since the branch point, and often the file that most needs processing.
+    untracked = _git_paths(root, ["ls-files", "-z", "--others", "--exclude-standard"])
+    return set(tracked) | set(untracked)
+
+
 def matches_any_pattern(relative_path, filename, patterns):
     """Check a file against exclude globs by both filename and relative path.
 
@@ -130,12 +259,13 @@ def is_binary(filepath):
 
 
 def discover_files(root, extensions, exclude_dirs, exclude_dir_globs,
-                    exclude_patterns, max_size_kb, respect_gitignore):
+                    exclude_patterns, max_size_kb, respect_gitignore,
+                    scoped_paths=None):
     """Walk root and collect relative paths that survive all filters.
 
     Filters apply in order, each an early-exit check: directory pruning
-    (name and glob), extension allowlist, exclude patterns, gitignore
-    status, max size, then binary-content sniffing.
+    (name and glob), extension allowlist, exclude patterns, git scope,
+    gitignore status, max size, then binary-content sniffing.
 
     Args:
         root: Directory to walk.
@@ -145,6 +275,9 @@ def discover_files(root, extensions, exclude_dirs, exclude_dir_globs,
         exclude_patterns: Filename/path globs to exclude.
         max_size_kb: Maximum file size in KB; larger files are skipped.
         respect_gitignore: If True, skip files git would ignore.
+        scoped_paths: Optional set of relative paths (from git_scoped_paths)
+            to intersect the walk with. None means no scoping; an empty set
+            means nothing is in scope and no file survives.
 
     Returns:
         Sorted list of relative paths (forward-slash separated).
@@ -163,6 +296,8 @@ def discover_files(root, extensions, exclude_dirs, exclude_dir_globs,
             if ext not in extensions:
                 continue
             if matches_any_pattern(relative_path, filename, exclude_patterns):
+                continue
+            if scoped_paths is not None and relative_path not in scoped_paths:
                 continue
             if respect_gitignore and is_gitignored(filepath, root):
                 continue
@@ -193,12 +328,26 @@ def main(argv=None):
     parser.add_argument("--exclude-patterns-mode", choices=["extend", "override"], default="extend")
     parser.add_argument("--max-size-kb", type=float, default=500)
     parser.add_argument("--no-gitignore", action="store_true")
+    parser.add_argument(
+        "--git-scope", choices=["all", "changed", "staged", "since"], default="all",
+        help="Narrow discovery to files git reports as in scope. "
+             "changed=uncommitted work, staged=index only, since=touched since --since-ref.",
+    )
+    parser.add_argument("--since-ref", default=None, help="Ref for --git-scope since.")
     args = parser.parse_args(argv)
 
     extensions = resolve_extensions(args.extensions)
     exclude_patterns = resolve_exclude_patterns(
         args.exclude_patterns_mode, parse_csv(args.exclude_patterns)
     )
+
+    try:
+        scoped_paths = git_scoped_paths(args.path, args.git_scope, args.since_ref)
+    except GitScopeError as e:
+        # Fail closed: a caller who asked for a narrow scope must never be
+        # silently handed the whole tree instead.
+        print(f"ERROR: cannot resolve --git-scope {args.git_scope}: {e}", file=sys.stderr)
+        return 2
 
     files = discover_files(
         root=args.path,
@@ -208,6 +357,7 @@ def main(argv=None):
         exclude_patterns=exclude_patterns,
         max_size_kb=args.max_size_kb,
         respect_gitignore=not args.no_gitignore,
+        scoped_paths=scoped_paths,
     )
     for f in files:
         print(f)

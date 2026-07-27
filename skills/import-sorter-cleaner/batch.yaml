@@ -1,0 +1,32 @@
+skill: import-sorter-cleaner
+version: 1
+extensions: py,js,jsx,mjs,cjs,ts,tsx
+exclude_patterns:
+  mode: extend
+  patterns:
+    - "__init__.py"
+    - "index.js"
+    - "index.ts"
+output_mode: edit-in-place
+max_parallel: 5
+discovery: scripts/discover_files.py
+default_config:
+  sort_style: by_type
+  remove_unused: true
+  idempotent: true
+  batch_mode: true
+
+# __init__.py / index.js / index.ts are excluded by default: imports there
+# are frequently re-exports whose "unused" status can't be judged from
+# local usage alone (Step 1). Narrow exclude_patterns.mode to "override"
+# to lift this if your project doesn't use the barrel-file pattern.
+
+# Optional — omit entirely for no verification (backward compatible).
+# Strongly recommended for this skill if your project runs a type-checker
+# or test suite — removing an import that looked unused but wasn't
+# (e.g. a side-effect-only import) is exactly what a gate would catch:
+# verify:
+#   enabled: true
+#   mode: per_file
+#   gate_config: .comrades/verify.json
+#   abort_threshold: 10

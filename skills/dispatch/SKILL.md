@@ -1,6 +1,6 @@
 ---
 name: dispatch
-description: Apply a batchable code-comrades skill (e.g. code-commenter) across every matching file in a folder or repository. Invoked explicitly as /code-comrades:dispatch <skill> <path> [--dry-run] [--config key=value,...] [--max-files N] — never auto-invoke this from a conversational request.
+description: Apply a batchable code-comrades skill (e.g. code-commenter) across every matching file in a folder or repository, or run several skills as a pipeline. Invoked explicitly as /code-comrades:dispatch <skill> <path> [--dry-run] [--config key=value,...] [--max-files N] [--changed|--staged|--since <ref>], or /code-comrades:dispatch pipeline <skill1,skill2,...> <path> [flags] — never auto-invoke this from a conversational request. If the named skill is a project skill (has project.yaml instead of batch.yaml, e.g. readme-master), this command routes to it directly instead of batch-running it.
 disable-model-invocation: true
 ---
 
@@ -13,19 +13,28 @@ You are orchestrating a batch run of a code-comrades skill across many files. Fo
 `$ARGUMENTS` contains everything after the invocation name, e.g. `code-commenter src/ --dry-run --config audience=junior --max-files 5`.
 
 Parse it as:
-- First whitespace-separated token: `SKILL_NAME`.
+- First whitespace-separated token: `SKILL_NAME`. **If this token is literally `pipeline`, stop and follow [Section 9 — Pipeline mode](#9-pipeline-mode) instead of the steps below.**
 - Second token: `TARGET_PATH` (relative to the current working directory).
 - Remaining tokens, any order:
   - `--dry-run` — boolean flag.
   - `--config key=value,key2=value2` — comma-separated pairs merged over the skill's `default_config`. A dotted key like `style.python=numpy` sets a nested field.
   - `--max-files N` — integer cap on files processed *this session* (on a resume, this means N remaining, not N total across the whole historical run).
   - `--no-verify` — boolean flag. Disables verification for this run even if `batch.yaml` configures a `verify:` section. Has no effect if the skill has no `verify:` section to begin with.
+  - `--changed` / `--staged` / `--since <ref>` — **incremental mode**: narrow the run to files git reports as in scope, instead of every matching file under `TARGET_PATH`. Set `GIT_SCOPE` to `changed`, `staged`, or `since` respectively (default `all`), and `SINCE_REF` to the ref argument when `--since` is used. These three are mutually exclusive — if more than one is passed, stop and ask which was meant rather than picking one.
+  - `--no-report` — boolean flag. Skip writing the run report file in Step 8. The conversational summary is still presented.
 
-If `SKILL_NAME` or `TARGET_PATH` is missing, stop and ask the user for the missing argument rather than guessing.
+If `SKILL_NAME` or `TARGET_PATH` is missing, stop and ask the user for the missing argument rather than guessing. If `--since` is passed with no ref following it, stop and ask for the ref.
 
-## 1. Resolve the skill
+## 1. Resolve the skill and route by execution model
 
-Read `"$CLAUDE_PLUGIN_ROOT/skills/{SKILL_NAME}/batch.yaml"`. If it doesn't exist, stop and report: "`{SKILL_NAME}` has no batch.yaml — it isn't a batchable skill." Otherwise extract: `extensions`, `exclude_patterns.mode`, `exclude_patterns.patterns`, `output_mode`, `max_parallel`, `discovery`, `default_config`.
+Read `"$CLAUDE_PLUGIN_ROOT/skills/{SKILL_NAME}/batch.yaml"`.
+
+**If it doesn't exist**, check for `"$CLAUDE_PLUGIN_ROOT/skills/{SKILL_NAME}/project.yaml"`:
+
+- **`project.yaml` exists** — this is a *project skill* (see `docs/project-skills.md`): it runs once against the whole repository and produces the artifacts its `produces:` list declares. None of the batch machinery below applies — no discovery, no manifest, no workers, no verification. Route instead of running: tell the user "`{SKILL_NAME}` is a project skill — handing off," then invoke the `{SKILL_NAME}` skill directly via the Skill tool, passing `TARGET_PATH` and any `--config` overrides. If batch-only flags were given (`--changed`/`--staged`/`--since`, `--max-files`, `--no-verify`, `--dry-run`, `--no-report`), say once that they don't apply to project skills and proceed without them. Stop following this document — the project skill's own SKILL.md governs from here.
+- **Neither file exists** — stop and report: "`{SKILL_NAME}` has no batch.yaml or project.yaml — it isn't a code-comrades skill."
+
+**Otherwise** (batch.yaml exists) this is a batch skill; extract: `extensions`, `exclude_patterns.mode`, `exclude_patterns.patterns`, `output_mode`, `max_parallel`, `discovery`, `default_config`, and continue with the steps below.
 
 Resolve the effective config: start from `default_config`, then apply any `--config` overrides on top.
 
@@ -46,10 +55,15 @@ python "$CLAUDE_PLUGIN_ROOT/{discovery script path from batch.yaml, e.g. scripts
   --exclude-patterns "{comma-joined exclude_patterns.patterns}" \
   --exclude-patterns-mode "{exclude_patterns.mode}" \
   --max-size-kb 500 \
+  --git-scope "{GIT_SCOPE}" \
   > /tmp/code-comrades-discovered-raw.txt
 ```
 
-(Add `--no-gitignore` if Step 2 determined this isn't a git repo.)
+(Add `--no-gitignore` if Step 2 determined this isn't a git repo. Add `--since-ref "{SINCE_REF}"` when `GIT_SCOPE` is `since`. `--git-scope all` is the default and can be omitted.)
+
+**Exit code 2 means the git scope couldn't be resolved** (not a git repo, bad ref, no commits, git missing). The script fails closed on purpose — it will not fall back to scanning the whole tree when the user asked for a narrow scope. Stop the run and report the script's stderr message verbatim; do not retry without the scope flag.
+
+If `GIT_SCOPE` is not `all`, state the scope in every subsequent message about this run (e.g. "12 changed files matched"), so a scoped run is never mistaken for a full one.
 
 `discover_files.py` prints paths relative to `{TARGET_PATH}`, not to `{REPO_ROOT}` — but every later step (the manifest, worker dispatch, the worker's own reported `file:`) uses `{REPO_ROOT}`-relative paths. Normalize this here, in one place, before anything downstream sees it:
 
@@ -87,9 +101,15 @@ python "$CLAUDE_PLUGIN_ROOT/scripts/manifest.py" init \
   --files-file /tmp/code-comrades-discovered.txt
 ```
 
-This prints `{"manifest_path": ..., "created": bool, "summary": {...}}`.
+For an incremental run (`GIT_SCOPE` is not `all`), append `--scope "{SCOPE_ID}"`, where `SCOPE_ID` is `changed`, `staged`, or `since:{SINCE_REF}`. This gives the incremental run its own manifest, so it never consumes or corrupts a full run's resume state.
 
-If `created` is `false` and the summary shows any `pending` or `error` files: ask "Found an existing run with {done+skipped count} files already complete and {pending+error count} remaining. Resume (skip completed files) or start fresh? [resume/fresh]". If "fresh", re-run the same `init` command with `--fresh` appended, which resets every file to `pending`.
+This prints `{"manifest_path": ..., "created": bool, "scope": ..., "reconciled": bool, "summary": {...}}`.
+
+**Full runs (`GIT_SCOPE` is `all`):** if `created` is `false` and the summary shows any `pending` or `error` files: ask "Found an existing run with {done+skipped count} files already complete and {pending+error count} remaining. Resume (skip completed files) or start fresh? [resume/fresh]". If "fresh", re-run the same `init` command with `--fresh` appended, which resets every file to `pending`.
+
+**Incremental runs:** do not ask. `init` reconciles the manifest to the freshly discovered set automatically — git recomputes the scope every invocation and is the authority, so a file in scope is always re-processed even if a previous run marked it done (it's in scope precisely because it changed since). The tradeoff is that an interrupted incremental run restarts rather than resumes; that's cheap, because the set is small and the skills are idempotent. If `reconciled` is `true`, mention it in passing: "re-scoped to {N} changed files".
+
+Note that a scoped run's own edits leave those files git-changed until committed, so an immediate re-run of `--changed` will re-process them and report no changes. That's the idempotency guarantee doing its job, not a fault.
 
 ## 6.5. Verification setup
 
@@ -176,12 +196,99 @@ This is a no-op (prints `{"checkpoint": "empty"}`, exits 0) if nothing was left 
 python "$CLAUDE_PLUGIN_ROOT/scripts/manifest.py" summary --manifest-path "{manifest_path}"
 ```
 
-Present its JSON as a plain-language summary: counts by status (including `reverted`, if verification was active), total files changed, and any `error` entries with their reasons (look these up from the manifest file directly, since `summary` only gives counts).
+Present its JSON as a plain-language summary: counts by status (including `reverted`, if verification was active), total files changed, and any `error` entries with their reasons (look these up from the manifest file directly, since `summary` only gives counts). If `GIT_SCOPE` was not `all`, say so explicitly here — "12 changed files" reads very differently from "12 files".
 
 **If verification was active**, also run:
 
 ```bash
-python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{VERIFY_CONFIG_PATH}" report --run "{RUN_ID}"
+python "$CLAUDE_PLUGIN_ROOT/scripts/verify.py" --root "{REPO_ROOT}" --config "{VERIFY_CONFIG_PATH}" report --run "{RUN_ID}" > /tmp/code-comrades-verify-report.json
 ```
 
 and fold its `tally` (counts by decision: `keep`/`reverted`/`skipped`) and `failures` (file, failing gate name, output tail) into the summary presented to the user. If verification was inactive for this run, the report looks identical to a pre-verification run — no mention of verification at all.
+
+### 8.1 Write the run report file
+
+Unless `--no-report` was passed, write a durable report alongside the manifest:
+
+```bash
+python "$CLAUDE_PLUGIN_ROOT/scripts/manifest.py" report --manifest-path "{manifest_path}"
+```
+
+Append `--verify-report-file /tmp/code-comrades-verify-report.json` if verification was active — that's what lets the report name the failing gate and show its output tail for each reverted file, detail the manifest alone doesn't carry.
+
+This prints `{"report_path": ..., "format": ..., "summary": {...}}`. Tell the user where the report landed. It's markdown by default; `--format json` is available for CI consumption but the orchestrator doesn't need it unless the user asks.
+
+The report is written from the manifest, so it's regenerable at any time — including long after the session ends, and including for a run that was interrupted or aborted. If the run ended early for any reason (abort threshold, `--max-files`, interruption you can observe), still write the report: a partial run is exactly when a written record is most useful.
+
+Add `.claude-batch-manifest/` to the target repo's `.gitignore` if it isn't already — the reports live there too.
+
+## 9. Pipeline mode
+
+Triggered when the first token of `$ARGUMENTS` is literally `pipeline`:
+
+```
+/code-comrades:dispatch pipeline <skill1,skill2,...> <path> [same flags as a single run]
+```
+
+e.g. `/code-comrades:dispatch pipeline type-annotator,code-commenter,license-header-injector src/ --changed`
+
+A pipeline is **N sequential single-skill runs over the same path**, sharing one confirmation and one combined report. It is not a new execution engine: each skill still runs Steps 1–8 exactly as documented above, with its own `batch.yaml`, its own discovery (skills legitimately match different file sets), and its own manifest. Do not try to merge their manifests or discovery passes.
+
+### 9.0 Parse
+
+- Second token: `SKILL_LIST` — comma-separated skill names, **order is significant** (see 9.1).
+- Third token: `TARGET_PATH`.
+- Remaining flags parse exactly as in Step 0 and apply to every skill in the pipeline. A `--config` given here applies to every skill; keys a given skill doesn't recognize are ignored by that skill, which is expected. For per-skill config, run the skills separately.
+
+If `SKILL_LIST` is empty or contains a duplicate, stop and ask. Resolve every skill's `batch.yaml` (Step 1) **before running any of them** — a typo in the third skill should fail before the first has edited anything, not after. If any listed skill turns out to be a project skill (has `project.yaml` instead of `batch.yaml`), stop the whole pipeline before anything runs and explain: pipelines are sequential *batch* runs over one file set; a project skill is a single repository-wide pass with its own artifact, so it can't be a pipeline member. Suggest running it separately (usually after the batch pipeline, so it documents the post-pipeline state).
+
+### 9.1 Order matters — say so
+
+Skills in a pipeline compose, and the order changes the output. The one that matters most today:
+
+- **`type-annotator` before `code-commenter`** — the commenter's `omit_types_when_annotated` default suppresses type restatement in docstrings when the signature already carries annotations. Annotating first therefore produces cleaner docs; commenting first produces docstrings full of types that the annotator then makes redundant.
+- **`license-header-injector` last** — it's positional (top-of-file) and independent of content, so running it last keeps it out of the way of skills that reason about file structure.
+
+If the user's order contradicts this, don't silently reorder — run what they asked, but say once, before starting: "Note: running `code-commenter` before `type-annotator` will produce docstrings that restate types the annotator later makes redundant. Proceed in this order, or swap? [proceed/swap]"
+
+### 9.2 Confirm once
+
+Run Step 2 (path + repo root) and Step 3 (discovery) for **every** skill first, collecting each one's file count. Then present a single confirmation:
+
+```
+Pipeline over {TARGET_PATH}{, scope: changed|staged|since <ref> if applicable}:
+  1. type-annotator          — 34 files
+  2. code-commenter          — 41 files
+  3. license-header-injector — 41 files
+Dirty tree: {yes/no}
+Proceed? [y/N]
+```
+
+Apply the same dirty-tree warning wording as Step 5. Ask **once** for the whole pipeline; do not re-prompt per skill. If `--dry-run` was passed, print this table plus each skill's file list and stop — no manifest, no workers.
+
+### 9.3 Run
+
+For each skill in `SKILL_LIST`, in order, execute Steps 6 through 8 as written, with these pipeline-specific rules:
+
+- **Re-discover before each skill** (re-run Step 3 for that skill immediately before its run). Earlier skills may have changed the files on disk, and under an incremental scope they may have changed what git reports as in scope. Never reuse the file list gathered during 9.2 for anything but the confirmation table.
+- **Skip the per-skill confirmation** in Step 5 — 9.2 already covered it.
+- **Skip the per-skill resume prompt** in Step 6. For a full run, default to `resume`. Announce it: "resuming type-annotator — 12 of 34 already complete".
+- **`--max-files` applies per skill**, not across the pipeline. Say so if the user passes it.
+- **Stop the whole pipeline** if a skill aborts on its verification threshold, or if a skill's `batch.yaml` is missing. Report which skills completed, which was interrupted, and which never started. A half-run pipeline is a normal outcome to report clearly, not an error to bury.
+- Write each skill's report file (Step 8.1) as its run finishes, not at the end. If the pipeline dies at skill 2 of 3, skill 1's report must already be on disk.
+
+### 9.4 Combined report
+
+After the last skill, present one summary — per-skill counts plus a pipeline total:
+
+```
+Pipeline complete over src/ (scope: changed)
+  type-annotator          — 34 files: 28 changed, 6 no-change
+  code-commenter          — 41 files: 33 changed, 7 no-change, 1 skipped (generated)
+  license-header-injector — 41 files: 41 changed
+  Total: 116 files processed, 102 changed
+  Reports: .claude-batch-manifest/*-report.md
+Review with: git diff
+```
+
+Note that a file touched by two skills counts once per skill — the total is file-runs, not distinct files. Say "116 file-runs across 3 skills" if the distinction could mislead. Then list every `error` and `reverted` entry across all skills together, since those are what the user actually has to act on.
