@@ -1,0 +1,21 @@
+{
+  "functions": [
+    {"file": "example.py", "name": "get_name", "expect": "skip"},
+    {"file": "example.py", "name": "add", "expect": "skip"},
+    {"file": "example.py", "name": "parse_csv", "expect": "comment"},
+    {"file": "example.py", "name": "merge_intervals", "expect": "comment"},
+    {"file": "example.py", "name": "is_even", "expect": "skip"},
+
+    {"file": "example.js", "name": "getName", "expect": "skip"},
+    {"file": "example.js", "name": "double", "expect": "skip"},
+    {"file": "example.js", "name": "debounce", "expect": "comment"},
+    {"file": "example.js", "name": "groupBy", "expect": "comment"},
+    {"file": "example.js", "name": "isEmpty", "expect": "skip"},
+
+    {"file": "example.go", "name": "GetName", "expect": "skip"},
+    {"file": "example.go", "name": "Double", "expect": "skip"},
+    {"file": "example.go", "name": "RetryWithBackoff", "expect": "comment"},
+    {"file": "example.go", "name": "Deduplicate", "expect": "comment"},
+    {"file": "example.go", "name": "IsEmpty", "expect": "skip"}
+  ]
+}

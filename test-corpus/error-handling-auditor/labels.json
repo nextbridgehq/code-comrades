@@ -1,0 +1,10 @@
+{
+  "functions": [
+    {"file": "example.js", "name": "safeFetch", "expect": "skip"},
+    {"file": "example.js", "name": "loadUser", "expect": "flag"},
+    {"file": "example.js", "name": "getUserName", "expect": "flag"},
+
+    {"file": "example.go", "name": "readConfigChecked", "expect": "skip"},
+    {"file": "example.go", "name": "readConfigUnchecked", "expect": "flag"}
+  ]
+}

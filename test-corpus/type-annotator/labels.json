@@ -1,0 +1,13 @@
+{
+  "functions": [
+    {"file": "example.py", "name": "get_name", "expect": "skip"},
+    {"file": "example.py", "name": "add", "expect": "annotate"},
+    {"file": "example.py", "name": "parse_csv", "expect": "annotate"},
+    {"file": "example.py", "name": "build_config", "expect": "skip"},
+
+    {"file": "example.js", "name": "getName", "expect": "skip"},
+    {"file": "example.js", "name": "double", "expect": "annotate"},
+    {"file": "example.js", "name": "debounce", "expect": "annotate"},
+    {"file": "example.js", "name": "dispatchEvent", "expect": "skip"}
+  ]
+}
