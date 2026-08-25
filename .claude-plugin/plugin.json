@@ -1,7 +1,7 @@
 {
   "name": "code-comrades",
   "displayName": "Code Comrades",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Repository-wide skills for Claude Code, under two execution models: a skill-agnostic batch runner (code-commenter, type-annotator, license-header-injector, error-handling-auditor, import-sorter-cleaner, test-stub-generator) with incremental git scoping, pipelines, resumable progress, and run reports \u2014 plus project skills (readme-master, changelog-fragment-extractor, readme-per-folder) that analyze the repository once and produce one or more artifacts.",
   "author": {
     "name": "Nextbridge",

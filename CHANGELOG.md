@@ -5,6 +5,20 @@ All notable changes to code-comrades are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0]
+
+### Added
+
+- **`ITERATE.md`** — autonomous iteration loop instructions for tuning a batch skill's `SKILL.md` against a fixed, scored corpus, plus a separate correctness-fix loop for `scripts/`. Intended for an unattended Claude Code session, not manual use.
+- **`eval/` scoring harness.** `eval/score.py --skill <name>` scores a `code-commenter`/`type-annotator`/`error-handling-auditor`/`license-header-injector`/`import-sorter-cleaner` run against `test-corpus/<skill>/labels.json` on accuracy, idempotency, and (where applicable) an LLM-judged quality component. Dev tooling — not part of the skills users invoke.
+- **`test-corpus/`** — fixed, hand-labeled fixtures for the five skills above, used only by `eval/score.py`.
+- **`scripts/test_manifest_resume_integration.py`** — exercises the `manifest.py` CLI end-to-end via subprocess across a simulated interruption and resume, complementing the existing function-level tests in `test_manifest.py`.
+
+### Fixed
+
+- **Stale "No rollback beyond git" line** in Known Limitations — `verify.py revert-run` has supported auto-revert since 0.2.0; the docs hadn't caught up.
+- **Commit noise during evaluation** — added `eval/log.md` to `.gitignore` to prevent test outputs from polluting the git tree during unattended `ITERATE.md` loops.
+
 ## [0.2.0]
 
 ### Added

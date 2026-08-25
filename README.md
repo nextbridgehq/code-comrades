@@ -2,7 +2,7 @@
 
 *Repository-wide skills for Claude Code, under two execution models: a skill-agnostic batch runner and whole-repository project skills.*
 
-![Version](https://img.shields.io/badge/version-0.2.0-lightgrey)
+![Version](https://img.shields.io/badge/version-0.3.0-lightgrey)
 ![Plugin Type](https://img.shields.io/badge/type-Claude%20Code%20Plugin-blue)
 ![Status](https://img.shields.io/badge/status-Active-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
@@ -141,7 +141,7 @@ You can override a skill's default configuration at runtime using the `--config`
 
 - **Safety is prompt-constrained, not sandboxed.** Worker subagents are restricted by Claude Code's permission system, not an OS-level sandbox. Run against a clean git tree and review `git diff` before committing.
 - **Non-deterministic judgment.** Borderline cases (e.g. trivial vs worth a docstring) are LLM judgment calls and can vary between runs.
-- **No rollback beyond git.** There is no built-in undo. Recovery is achieved via `git checkout`.
+- **Rollback is git-checkout by default; opt-in auto-revert via `verify.py`.** Without verification configured, recovery is `git checkout`. With it, per-file gating and `verify.py revert-run` can undo automatically — see docs/verification.md.
 - **Incremental runs don't resume.** Incremental mode (`--changed`, etc.) re-scopes from git each invocation. Interrupted runs in this mode restart rather than picking up mid-set.
 
 ## Contributing

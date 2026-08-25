@@ -1,0 +1,14 @@
+{
+  "imports": [
+    {
+      "file": "example.py",
+      "must_remove": ["import os", "import sys", "from collections import OrderedDict"],
+      "must_keep": ["import json", "import re"]
+    },
+    {
+      "file": "example.js",
+      "must_remove": ["import { debounce } from 'lodash';"],
+      "must_keep": ["import fs from 'fs';", "import path from 'path';", "import './polyfills.js';"]
+    }
+  ]
+}

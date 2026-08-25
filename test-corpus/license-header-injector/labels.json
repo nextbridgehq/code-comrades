@@ -1,0 +1,7 @@
+{
+  "files": [
+    {"file": "needs_header.py", "expect": "header"},
+    {"file": "already_has_header.js", "expect": "no_duplicate", "existing_marker_count": 2},
+    {"file": "generated_skip.go", "expect": "skip"}
+  ]
+}
